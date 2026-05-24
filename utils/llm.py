@@ -2,48 +2,51 @@ import os
 import re
 import json
 from typing import List, Dict, Any, Optional
-import google.generativeai as genai
-from anthropic import Anthropic
-from openai import OpenAI
+from groq import Groq
 from utils.data_loader import get_dataset_json, get_dataset_stats_summary
 
 def get_system_prompt(df) -> str:
-    """Generates the unified system prompt with the dataset JSON and descriptive stats injected."""
-    dataset_json = get_dataset_json(df)
-    dataset_summary = get_dataset_stats_summary(df)
-    
-    prompt = f"""You are a smart, professional data analyst assistant. You are analyzing a structured dataset.
+    """Generates a compact system prompt with the dataset info (optimized for token limits)."""
+    try:
+        # Create a compact representation of the dataset
+        dataset_info = []
+        
+        # Check if this is the default dataset or a custom one
+        if 'month' in df.columns:
+            # Default retail dataset format
+            for _, row in df.iterrows():
+                dataset_info.append(f"{row['month']}: ${row['sales']:,} sales, {row['customers']} customers, {row['returns']} returns")
+        else:
+            # Custom dataset - use first few rows as examples
+            for idx, (_, row) in enumerate(df.head(5).iterrows()):
+                row_str = ", ".join([f"{col}: {row[col]}" for col in df.columns])
+                dataset_info.append(f"Row {idx+1}: {row_str}")
+            if len(df) > 5:
+                dataset_info.append(f"... and {len(df) - 5} more rows")
+        
+        dataset_summary = f"Dataset has {len(df)} rows, {len(df.columns)} columns: {', '.join(df.columns)}"
+        
+        prompt = f"""You are a professional data analyst assistant. Analyze the following dataset and answer questions clearly.
 
-Here is the full dataset in JSON format:
-{dataset_json}
-
-Here is a quick summary of the dataset schema and basic statistics:
+DATASET INFO:
 {dataset_summary}
 
-When the user asks a question:
-1. Analyze the data carefully, compute the correct answers, and provide a clear, concise explanation.
-2. Always refer to specific numbers and details from the dataset.
-3. If asked about trends, compare relevant segments (e.g. months, categories).
-4. Keep explanations clear and readable. If a question is simple, keep the answer under 5 sentences unless a detailed breakdown is requested.
-5. If the user explicitly asks to visualize, chart, plot, or graph something, or if the question directly requires a visual representation, append a structured JSON block at the very end of your response inside a markdown code block tagged with `[CHART_DATA]`:
-```[CHART_DATA]
-{{
-  "type": "bar" | "line" | "scatter" | "pie",
-  "title": "A descriptive title for the chart",
-  "labels": ["Label1", "Label2", ...],
-  "values": [Value1, Value2, ...],
-  "label": "Y-axis or Metric Label"
-}}
-```
+SAMPLE DATA:
+{chr(10).join(dataset_info[:10])}
 
-Ensure that:
-- The `labels` array contains the strings/categories for the X-axis (e.g. months "Jan", "Feb" or categories).
-- The `values` array contains corresponding numeric values for the Y-axis.
-- The `type` is exactly one of "bar", "line", "scatter", "pie".
-- The `[CHART_DATA]` block is at the absolute end of your response, starting with ```[CHART_DATA] and ending with ```.
-- Only generate the chart block when visual rendering is requested or strongly implied.
-"""
-    return prompt
+When answering:
+1. Use exact numbers from the data.
+2. Keep explanations under 5 sentences unless detail is requested.
+3. If asked to visualize/chart/plot, append a JSON block at the END:
+```[CHART_DATA]
+{{"type": "bar|line|scatter|pie", "title": "...", "labels": [...], "values": [...], "label": "..."}}
+```
+Only include [CHART_DATA] when visualization is requested."""
+        return prompt
+    except Exception as e:
+        # Fallback prompt if something goes wrong
+        return f"""You are a professional data analyst. The user has uploaded a dataset with {len(df)} rows and columns: {', '.join(df.columns)}.
+Answer questions about this data concisely. If asked to visualize, append [CHART_DATA] JSON block."""
 
 def extract_chart_data(text: str):
     """
@@ -72,35 +75,12 @@ def extract_chart_data(text: str):
             
     return text, None
 
-def test_gemini_key(api_key: str) -> bool:
-    """Tests if a Gemini API key is valid."""
+def test_groq_key(api_key: str) -> bool:
+    """Tests if a Groq API key is valid."""
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        model.generate_content("test", generation_config={"max_output_tokens": 5})
-        return True
-    except Exception:
-        return False
-
-def test_anthropic_key(api_key: str) -> bool:
-    """Tests if an Anthropic API key is valid."""
-    try:
-        client = Anthropic(api_key=api_key)
-        client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=5,
-            messages=[{"role": "user", "content": "test"}]
-        )
-        return True
-    except Exception:
-        return False
-
-def test_openai_key(api_key: str) -> bool:
-    """Tests if an OpenAI API key is valid."""
-    try:
-        client = OpenAI(api_key=api_key)
+        client = Groq(api_key=api_key)
         client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="mixtral-8x7b-32768",
             max_tokens=5,
             messages=[{"role": "user", "content": "test"}]
         )
@@ -108,55 +88,30 @@ def test_openai_key(api_key: str) -> bool:
     except Exception:
         return False
 
-def query_gemini(api_key: str, df, messages: List[Dict[str, str]]) -> str:
-    """Sends the conversation history and dataset context to Gemini API."""
-    genai.configure(api_key=api_key)
+def query_groq(api_key: str, df, messages: List[Dict[str, str]]) -> str:
+    """Sends the conversation history and dataset context to Groq API using Mixtral."""
+    client = Groq(api_key=api_key)
     system_prompt = get_system_prompt(df)
     
-    model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        system_instruction=system_prompt
-    )
-    
-    contents = []
-    for msg in messages:
-        role = 'user' if msg['role'] == 'user' else 'model'
-        contents.append({"role": role, "parts": [msg['content']]})
-        
-    response = model.generate_content(contents)
-    return response.text
-
-def query_anthropic(api_key: str, df, messages: List[Dict[str, str]]) -> str:
-    """Sends the conversation history and dataset context to Anthropic Claude API."""
-    client = Anthropic(api_key=api_key)
-    system_prompt = get_system_prompt(df)
-    
-    claude_messages = []
+    # Build messages list with system prompt
+    groq_messages = [{"role": "system", "content": system_prompt}]
     for msg in messages:
         role = 'user' if msg['role'] == 'user' else 'assistant'
-        claude_messages.append({"role": role, "content": msg['content']})
-        
-    response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=2000,
-        system=system_prompt,
-        messages=claude_messages
-    )
-    return response.content[0].text
-
-def query_openai(api_key: str, df, messages: List[Dict[str, str]]) -> str:
-    """Sends the conversation history and dataset context to OpenAI GPT API."""
-    client = OpenAI(api_key=api_key)
-    system_prompt = get_system_prompt(df)
+        groq_messages.append({"role": role, "content": msg['content']})
     
-    openai_messages = [{"role": "system", "content": system_prompt}]
-    for msg in messages:
-        role = 'user' if msg['role'] == 'user' else 'assistant'
-        openai_messages.append({"role": role, "content": msg['content']})
-        
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        max_tokens=2000,
-        messages=openai_messages
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            max_tokens=2000,
+            messages=groq_messages
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        error_str = str(e).lower()
+        # Handle rate limit or model decommissioned errors
+        if 'rate' in error_str or '429' in str(e):
+            raise Exception("⏱️ **Rate Limited**: Groq API rate limit reached. Please wait a moment and try again.")
+        elif 'decommissioned' in error_str or 'model' in error_str and 'not' in error_str:
+            raise Exception("🔄 **Model Issue**: Please wait and try again. If error persists, check Groq console for available models.")
+        else:
+            raise e

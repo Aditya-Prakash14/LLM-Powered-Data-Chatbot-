@@ -21,12 +21,8 @@ from utils.data_loader import (
     validate_uploaded_csv
 )
 from utils.llm import (
-    query_gemini,
-    query_anthropic,
-    query_openai,
-    test_gemini_key,
-    test_anthropic_key,
-    test_openai_key,
+    query_groq,
+    test_groq_key,
     extract_chart_data
 )
 from utils.charts import render_plotly_chart
@@ -47,6 +43,17 @@ st.markdown("""
         color: #FFFFFF !important;
         font-weight: 600;
         letter-spacing: -0.02em;
+    }
+    
+    /* Info box styling */
+    .info-box {
+        background-color: rgba(59, 130, 246, 0.08);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 8px;
+        padding: 0.8rem;
+        margin: 0.5rem 0;
+        font-size: 0.85rem;
+        color: #93C5FD;
     }
     
     /* Main Layout background refinement */
@@ -274,60 +281,26 @@ def reset_dataset():
 
 # ----------------- SIDEBAR CONFIG PANEL -----------------
 with st.sidebar:
-    st.markdown("### 🤖 Model & API Setup")
+    st.markdown("### 🚀 Groq API Setup")
     
     # Check for keys in environment variables
-    env_gemini_key = os.getenv("GEMINI_API_KEY", "")
-    env_anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    env_openai_key = os.getenv("OPENAI_API_KEY", "")
+    env_groq_key = os.getenv("GROQ_API_KEY", "")
     
     # Input override fields (default to environment values)
-    gemini_key = st.text_input("Gemini API Key", value=env_gemini_key, type="password", help="Input Google Gemini API key.")
-    anthropic_key = st.text_input("Anthropic API Key", value=env_anthropic_key, type="password", help="Input Anthropic Claude API key.")
-    openai_key = st.text_input("OpenAI API Key", value=env_openai_key, type="password", help="Input OpenAI GPT API key.")
+    groq_key = st.text_input("Groq API Key", value=env_groq_key, type="password", help="Input Groq API key. Get it from https://console.groq.com")
     
     # Status badges
     st.markdown("##### 🔌 Connection Status")
     
-    gemini_active = len(gemini_key.strip()) > 0
-    anthropic_active = len(anthropic_key.strip()) > 0
-    openai_active = len(openai_key.strip()) > 0
+    groq_active = len(groq_key.strip()) > 0
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if gemini_active:
-            st.markdown('<div class="indicator-badge badge-success">Gemini Active</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="indicator-badge badge-error">Gemini Off</div>', unsafe_allow_html=True)
-    with col2:
-        if anthropic_active:
-            st.markdown('<div class="indicator-badge badge-success">Claude Active</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="indicator-badge badge-error">Claude Off</div>', unsafe_allow_html=True)
-    with col3:
-        if openai_active:
-            st.markdown('<div class="indicator-badge badge-success">GPT Active</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="indicator-badge badge-error">GPT Off</div>', unsafe_allow_html=True)
-            
-    # Compile available models list
-    available_providers = []
-    if gemini_active:
-        available_providers.append("Google Gemini (gemini-1.5-flash)")
-    if anthropic_active:
-        available_providers.append("Anthropic Claude (claude-3-5-sonnet)")
-    if openai_active:
-        available_providers.append("OpenAI GPT (gpt-4o-mini)")
-        
-    if not available_providers:
-        st.warning("⚠️ No API keys detected. Please provide a key in a local .env file or input one above to activate a model.")
-        selected_model = None
+    if groq_active:
+        st.markdown('<div class="indicator-badge badge-success">Groq Active (Mixtral 8x7B)</div>', unsafe_allow_html=True)
     else:
-        selected_model = st.selectbox(
-            "Select Active LLM Model",
-            options=available_providers,
-            help="Choose the active LLM that will answer your dataset queries."
-        )
+        st.markdown('<div class="indicator-badge badge-error">Groq Offline</div>', unsafe_allow_html=True)
+        
+    if not groq_active:
+        st.warning("⚠️ No Groq API key detected. Please provide a key in a local .env file or input one above to activate the model.")
         
     st.markdown("---")
     st.markdown("### 📊 Dataset Manager")
@@ -455,21 +428,14 @@ if user_prompt:
     st.session_state.messages.append({"role": "user", "content": user_prompt})
     
     # 2. Call the active model
-    if not selected_model:
-        st.error("❌ No active model configured. Please add an API key in the sidebar configuration panel to execute.")
+    if not groq_active:
+        st.error("❌ No Groq API key configured. Please add your key in the sidebar configuration panel to execute.")
     else:
         with st.chat_message("assistant"):
-            with st.spinner("🤖 Consulting DataBot analytical models..."):
+            with st.spinner("🚀 Consulting Groq Mixtral models..."):
                 try:
-                    # Select API calling function
-                    if "Gemini" in selected_model:
-                        raw_response = query_gemini(gemini_key, st.session_state.active_df, st.session_state.messages)
-                    elif "Claude" in selected_model:
-                        raw_response = query_anthropic(anthropic_key, st.session_state.active_df, st.session_state.messages)
-                    elif "GPT" in selected_model:
-                        raw_response = query_openai(openai_key, st.session_state.active_df, st.session_state.messages)
-                    else:
-                        raise ValueError("No active provider matched.")
+                    # Call Groq API
+                    raw_response = query_groq(groq_key, st.session_state.active_df, st.session_state.messages)
                     
                     # Clean the response and extract chart JSON if present
                     display_content, chart_data = extract_chart_data(raw_response)
