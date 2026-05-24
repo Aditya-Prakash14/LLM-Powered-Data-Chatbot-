@@ -295,7 +295,7 @@ with st.sidebar:
     groq_active = len(groq_key.strip()) > 0
     
     if groq_active:
-        st.markdown('<div class="indicator-badge badge-success">Groq Active (Mixtral 8x7B)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="indicator-badge badge-success">Groq Active (Llama 3.3 70B)</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="indicator-badge badge-error">Groq Offline</div>', unsafe_allow_html=True)
         
@@ -432,7 +432,7 @@ if user_prompt:
         st.error("❌ No Groq API key configured. Please add your key in the sidebar configuration panel to execute.")
     else:
         with st.chat_message("assistant"):
-            with st.spinner("🚀 Consulting Groq Mixtral models..."):
+            with st.spinner("🚀 Consulting Groq Llama models..."):
                 try:
                     # Call Groq API
                     raw_response = query_groq(groq_key, st.session_state.active_df, st.session_state.messages)

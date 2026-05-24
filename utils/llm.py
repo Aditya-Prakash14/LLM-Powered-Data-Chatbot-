@@ -80,7 +80,7 @@ def test_groq_key(api_key: str) -> bool:
     try:
         client = Groq(api_key=api_key)
         client.chat.completions.create(
-            model="mixtral-8x7b-32768",
+            model="llama-3.3-70b-versatile",
             max_tokens=5,
             messages=[{"role": "user", "content": "test"}]
         )
@@ -89,7 +89,7 @@ def test_groq_key(api_key: str) -> bool:
         return False
 
 def query_groq(api_key: str, df, messages: List[Dict[str, str]]) -> str:
-    """Sends the conversation history and dataset context to Groq API using Mixtral."""
+    """Sends the conversation history and dataset context to Groq API using Llama 3.3."""
     client = Groq(api_key=api_key)
     system_prompt = get_system_prompt(df)
     
@@ -101,7 +101,7 @@ def query_groq(api_key: str, df, messages: List[Dict[str, str]]) -> str:
     
     try:
         response = client.chat.completions.create(
-            model="mixtral-8x7b-32768",
+            model="llama-3.3-70b-versatile",
             max_tokens=2000,
             messages=groq_messages
         )
